@@ -17,11 +17,13 @@ const { access_token: accessToken } = await authentication.json()
 
 let searchTerm;
 let searchData;
+let artistSearched;
+let artistImage;
 const searchForm = document.getElementById("userSearch");
 const searchButton = document.getElementById("enterButton");
+const imageSection = document.getElementById("profileImage")
 async function assignQuery(query) {
     //used AI to help debug spelling errors and incorrect elements 
-    console.log(searchForm.value)
     searchTerm = query
 
     const searchFor = await fetch(`https://api.spotify.com/v1/search?q=${searchTerm}&type=artist&limit=1`, {
@@ -31,8 +33,11 @@ async function assignQuery(query) {
     });
 
     searchData = await searchFor.json()
-    console.log(searchData)
-    //TODO: create a variable to store the endpoint, then going from there
+    artistSearched = searchData.artists.items[0]
+    console.log(artistSearched.images[0].url)
+    let newImage = document.createElement("img")
+    newImage.src = artistSearched.images[0].url
+    imageSection.append(newImage)
 };
 
 // Used AI to debug this event listener, wrapping it in a arrow function
