@@ -18,6 +18,35 @@ const { access_token: accessToken } = await authentication.json()
 let searchTerm;
 let searchData;
 let searchItem;
+let embedDiv = document.createElement("div")
+embedDiv.id = "embed-iframe"
+embedDiv.style.display = "none"
+document.body.appendChild(embedDiv)
+
+// https://developer.spotify.com/documentation/embeds/tutorials/using-the-iframe-api
+// used AI to implement searched tracks into the embed
+let pendingEmbedUrl = null;
+let embedController = null;
+
+window.onSpotifyIframeApiReady = (IFrameAPI) => {
+    const options = {
+        width: '100%',
+        height: '250',
+    };
+
+    if (pendingEmbedUrl) {
+            options.url = pendingEmbedUrl
+        }
+
+    IFrameAPI.createController(embedDiv, options, (controller) => {
+        embedController = controller
+        if (pendingEmbedUrl) {
+            embedController.loadEntity(pendingEmbedUrl)
+        }
+    })
+};
+
+
 const dropdown = document.getElementById("typeOfSearch");
 const searchForm = document.getElementById("userSearch");
 const searchButton = document.getElementById("enterButton");
@@ -51,30 +80,48 @@ async function assignQuery(query) {
     let titleHeader = document.createElement("h2")
     titleHeader.textContent = searchItem.name
     if (dropdown.value == "album") {
+        embedDiv.style.display = "none"
         let artistSubtitle = document.createElement("h3")
         artistSubtitle.textContent = `By ${searchItem.artists[0].name}`
         let yearSubtitle = document.createElement("h3")
-        yearSubtitle.textContent = `Released in ${searchItem.release_date.slice(0,4)}`
+        yearSubtitle.textContent = `Released in ${searchItem.release_date.slice(0, 4)}`
         let trackSubtitle = document.createElement("h3")
         trackSubtitle.textContent = "Tracklist:"
 
         let trackList = document.createElement("ol")
         const albumTrackSearch = await fetch(`https://api.spotify.com/v1/albums/${searchItem.id}/tracks`, {
-        headers: {
-            'Authorization': `Bearer ${accessToken}`
-        } })
+            headers: {
+                'Authorization': `Bearer ${accessToken}`
+            }
+        })
         let albumData = await albumTrackSearch.json();
-        console.log(albumData.items)
         albumData.items.forEach(item => {
             let track = document.createElement("li")
             track.textContent = item.name
             trackList.append(track)
         })
-        
+
         searchSection.append(newImage, titleHeader, artistSubtitle, yearSubtitle, trackSubtitle, trackList)
     } else if (dropdown.value == "track") {
-        searchSection.append(newImage, titleHeader)
+        let artistSubtitle = document.createElement("h3")
+        artistSubtitle.textContent = `By ${searchItem.artists[0].name}`
+        let albumSubtitle = document.createElement("h3")
+        // add a feature for the user to autofill searching the album?? if have time
+        albumSubtitle.textContent = `From: ${searchItem.album.name} Released in ${searchItem.album.release_date.slice(0, 4)}`
+        if (searchItem.is_playable == true) {
+            let embedUrl = searchItem.external_urls.spotify
+            embedDiv.style.display = "block"
+            pendingEmbedUrl = embedUrl
+            if (embedController) {
+                embedController.loadEntity(embedUrl)
+            }
+        } else {
+            embedDiv.style.display = "none"
+        }
+
+        searchSection.append(newImage, titleHeader, artistSubtitle, albumSubtitle)
     } else {
+        embedDiv.style.display = "none"
         searchSection.append(newImage, titleHeader)
     }
 
