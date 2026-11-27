@@ -1,19 +1,30 @@
-// used AI to help understand and import keys
+// used AI to help understand and import keys and cover error handling
 
 import { CLIENT_ID, CLIENT_SECRET } from './config.js'
 
+let accessToken;
 
-const authentication = await fetch(`https://accounts.spotify.com/api/token`, {
-    method: 'POST',
-    headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-        'Authorization': 'Basic ' + btoa(`${CLIENT_ID}:${CLIENT_SECRET}`)
-    },
-    body: `grant_type=client_credentials`
-});
+try {
+    const authentication = await fetch(`https://accounts.spotify.com/api/token`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'Authorization': 'Basic ' + btoa(`${CLIENT_ID}:${CLIENT_SECRET}`)
+        },
+        body: `grant_type=client_credentials`
+    });
 
-//turning the snake case variable into camelCase: help from ai
-const { access_token: accessToken } = await authentication.json()
+    if (!authentication.ok) {
+        throw new Error(`Authentication Failed: ${authentication.status}`)
+    }
+    //turning the snake case variable into camelCase: help from ai
+    const { access_token } = await authentication.json()
+    accessToken = access_token
+
+} catch (error) {
+    let tokenError = document.createElement("h2")
+    tokenError.textContent = `Token Error: ${error}`
+}
 
 let searchTerm;
 let searchData;
@@ -58,101 +69,121 @@ const searchSection = document.getElementById("searchSection")
 async function assignQuery(query) {
     //used AI to help debug spelling errors and incorrect elements 
     searchTerm = query
-    const searchFor = await fetch(`https://api.spotify.com/v1/search?q=${searchTerm}&type=${dropdown.value}&limit=1`, {
-        headers: {
-            'Authorization': `Bearer ${accessToken}`
+
+    if (!searchTerm) {
+        let errorMessage = document.createElement("h2")
+        errorMessage.textContent = `Please enter a search term.`
+        searchSection.append(errorMessage)
+    } else {
+        try {
+
+            const searchFor = await fetch(`https://api.spotify.com/v1/search?q=${searchTerm}&type=${dropdown.value}&limit=1`, {
+                headers: {
+                    'Authorization': `Bearer ${accessToken}`
+                }
+            });
+            if (searchFor.error) {
+                let errorMessage = document.createElement("h2")
+                errorMessage.textContent = "Sorry, we couldn't find anything. Please try searching again."
+                console.log(searchData)
+            } else {
+                searchData = await searchFor.json()
+                if (dropdown.value == "artist") {
+                    searchItem = searchData.artists.items[0]
+                } else if (dropdown.value == "album") {
+                    searchItem = searchData.albums.items[0]
+                } else {
+                    searchItem = searchData.tracks.items[0]
+                }
+
+                let newImage = document.createElement("img")
+                newImage.classList.add('img-fluid', 'rounded')
+                if (dropdown.value == "track") {
+                    newImage.src = searchItem.album.images[0].url
+                } else {
+                    newImage.src = searchItem.images[0].url
+                }
+                let titleHeader = document.createElement("h2")
+                titleHeader.textContent = searchItem.name
+                if (dropdown.value == "album") {
+                    embedWrapper.style.display = "none"
+                    embedController?.pause()
+                    let artistSubtitle = document.createElement("h3")
+                    artistSubtitle.textContent = `By ${searchItem.artists[0].name}`
+                    let yearSubtitle = document.createElement("h3")
+                    yearSubtitle.textContent = `Released in ${searchItem.release_date.slice(0, 4)}`
+                    let trackSubtitle = document.createElement("h3")
+                    trackSubtitle.textContent = "Tracklist:"
+                    let trackList = document.createElement("ol")
+
+                    const albumTrackSearch = await fetch(`https://api.spotify.com/v1/albums/${searchItem.id}/tracks`, {
+                        headers: {
+                            'Authorization': `Bearer ${accessToken}`
+                        }
+                    })
+                    let albumData = await albumTrackSearch.json();
+                    albumData.items.forEach(item => {
+                        let track = document.createElement("li")
+                        track.textContent = item.name
+                        trackList.append(track)
+                    })
+
+                    searchSection.append(newImage, titleHeader, artistSubtitle, yearSubtitle, trackSubtitle, trackList)
+                } else if (dropdown.value == "track") {
+                    let artistSubtitle = document.createElement("h3")
+                    artistSubtitle.textContent = `By ${searchItem.artists[0].name}`
+                    let albumSubtitle = document.createElement("h3")
+                    albumSubtitle.textContent = `From: ${searchItem.album.name} Released in ${searchItem.album.release_date.slice(0, 4)}`
+                    
+                    let screenWidth = document.documentElement.clientWidth
+                    if (searchItem.is_playable == true && screenWidth > 460) {
+                        let embedUrl = searchItem.external_urls.spotify
+                        embedWrapper.style.display = "block"
+                        pendingEmbedUrl = embedUrl
+                        if (embedController) {
+                            embedController?.loadEntity(embedUrl)
+                        }
+                    } else {
+                        embedWrapper.style.display = "none"
+                        embedController?.pause()
+
+                    }
+
+                    searchSection.append(newImage, titleHeader, artistSubtitle, albumSubtitle)
+                } else {
+                    embedDiv.style.display = "none"
+                    let trackSubtitle = document.createElement("h3")
+                    trackSubtitle.textContent = `Recent Albums:`
+                    let albums = document.createElement("ol")
+
+                    const albumSearch = await fetch(`https://api.spotify.com/v1/artists/${searchItem.id}/albums`, {
+                        headers: {
+                            'Authorization': `Bearer ${accessToken}`
+                        }
+                    })
+                    let albumData = await albumSearch.json()
+                    albumData.items.forEach(item => {
+                        let track = document.createElement("li")
+                        track.textContent = item.name
+                        albums.append(track)
+                    })
+
+                    searchSection.append(newImage, titleHeader, trackSubtitle, albums)
+                }
+            }
+
+        } catch (error) {
+            let errorMessage = document.createElement("h2")
+            errorMessage.textContent = `Sorry, something went wrong. Please try searching again.`
+            searchSection.append(errorMessage)
         }
-    });
-
-    searchData = await searchFor.json()
-    if (dropdown.value == "artist") {
-        searchItem = searchData.artists.items[0]
-    } else if (dropdown.value == "album") {
-        searchItem = searchData.albums.items[0]
-    } else {
-        searchItem = searchData.tracks.items[0]
     }
-
-    let newImage = document.createElement("img")
-    if (dropdown.value == "track") {
-        newImage.src = searchItem.album.images[0].url
-    } else {
-        newImage.src = searchItem.images[0].url
-    }
-    let titleHeader = document.createElement("h2")
-    titleHeader.textContent = searchItem.name
-    if (dropdown.value == "album") {
-        embedWrapper.style.display = "none"
-        embedController?.pause()
-        let artistSubtitle = document.createElement("h3")
-        artistSubtitle.textContent = `By ${searchItem.artists[0].name}`
-        let yearSubtitle = document.createElement("h3")
-        yearSubtitle.textContent = `Released in ${searchItem.release_date.slice(0, 4)}`
-        let trackSubtitle = document.createElement("h3")
-        trackSubtitle.textContent = "Tracklist:"
-        let trackList = document.createElement("ol")
-
-        const albumTrackSearch = await fetch(`https://api.spotify.com/v1/albums/${searchItem.id}/tracks`, {
-            headers: {
-                'Authorization': `Bearer ${accessToken}`
-            }
-        })
-        let albumData = await albumTrackSearch.json();
-        albumData.items.forEach(item => {
-            let track = document.createElement("li")
-            track.textContent = item.name
-            trackList.append(track)
-        })
-
-        searchSection.append(newImage, titleHeader, artistSubtitle, yearSubtitle, trackSubtitle, trackList)
-    } else if (dropdown.value == "track") {
-        let artistSubtitle = document.createElement("h3")
-        artistSubtitle.textContent = `By ${searchItem.artists[0].name}`
-        let albumSubtitle = document.createElement("h3")
-        albumSubtitle.textContent = `From: ${searchItem.album.name} Released in ${searchItem.album.release_date.slice(0, 4)}`
-        if (searchItem.is_playable == true) {
-            let embedUrl = searchItem.external_urls.spotify
-            embedWrapper.style.display = "block"
-            pendingEmbedUrl = embedUrl
-            if (embedController) {
-                embedController?.loadEntity(embedUrl)
-            }
-        } else {
-            embedWrapper.style.display = "none"
-            embedController?.pause()
-
-        }
-
-        searchSection.append(newImage, titleHeader, artistSubtitle, albumSubtitle)
-    } else {
-        embedDiv.style.display = "none"
-        let trackSubtitle = document.createElement("h3")
-        trackSubtitle.textContent = `Recent Albums:`
-        let albums = document.createElement("ol")
-        console.log(searchItem.id)
-
-        const albumSearch = await fetch(`https://api.spotify.com/v1/artists/${searchItem.id}/albums`, {
-            headers: {
-                'Authorization': `Bearer ${accessToken}`
-            }
-        })
-        let albumData = await albumSearch.json()
-        console.log(albumData)
-        albumData.items.forEach(item => {
-            let track = document.createElement("li")
-            track.textContent = item.name
-            albums.append(track)
-        })
-
-        searchSection.append(newImage, titleHeader, trackSubtitle, albums)
-    }
-
 }
 
 async function imageCheck(query) {
     if (searchSection.innerHTML != "") {
         searchSection.innerHTML = ""
-        embedDiv.style.display - "none"
+        embedWrapper.style.display - "none"
         assignQuery(query)
     } else {
         assignQuery(query)
